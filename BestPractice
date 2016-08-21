@@ -1,0 +1,124 @@
+Gap Analysis
+
+Suppose I have a LWM2M client with a multi-instance ‘BLE Beacons’ object (for example) and while registering there are 5 instances of the object (corresponding to 5 physical beacons), so the client registers with 5 instances.
+
+ 
+
+After a while if the number of nearby beacons changes, how does the client notify the server that the number of instances has changed.
+
+ 
+
+The logical place to do this would be the update, but I wanted to confirm this with you. Looking at Leshan client code, this is more complex since the ‘update’ is automatic and periodic and I haven’t found a place to change this during the update.
+
+I also wonder if LWM2M caters to this use-case at all.
+
+1. Use application-level client-side logic to monitor the ble beacons, create and delete object instances accordingly and send a registration update to the LWM2M server.
+
+2. Use application-level server-side logic to observe a client-side resource value (such as a count, or a timestamp) that accurately reflects a client creating object instances. When the resource changes, the server requests the client to update its registration (or not, depending on how "fresh" it needs the ble-beacons list to be).
+
+3. Find a way to not depend on application logic and instead attempt to perform this using CoAP, LWM2M and the object model.
+
+
+Option 1 is what you're attempting right now and it's most likely the 
+simplest or easiest implementation scenario given a not-so-constrained 
+client which can implement all the logic.
+
+Option 3 is the ideal scenario where the platform support is native for 
+such cases. This probably requires some engineering and interpretation 
+but then once that's done, it would be applicable to many kinds of 
+verticals. Right now, LWM2M lacks a proper interaction model that has 
+the semantics to do anything like this, except if we progress towards it 
+using Option 2.
+
+If you're using Option 1, the LWM2M specs has this to say about Updates 
+using the Client Registration Interface (see section 5.3.2 Update):
+
+"Periodically or based on certain events within the LWM2M Client or 
+initiated by the LWM2M Server, the LWM2M Client updates its registration 
+information with a LWM2M Server by sending an "Update" operation to the 
+LWM2M Server. This "Update" operation MUST contain only the parameters 
+listed in Table 5 which have changed compared to the last registration 
+parameters sent to the LWM2M Server"
+
+Unfortunately I can't for the life of me see how Table 5 relates to 
+Updates, since Table 5 is about bootstrapping. It might be a typo. I'll 
+need to check newer versions of the spec. It might be referring to Table 
+8 instead.
+
+So Option 1 is a valid approach.
+
+Option 2 is advantageous if you wish from the server-side to throttle 
+the client(s) update frequency, save bandwidth for large payloads, or 
+work with constrained clients that have no room for extra application 
+logic. This of course requires using Observe, and LWM2M specifies this 
+as a Notify operation that accepts conditional parameters for min-time, 
+max-time, greater-than, less-than, etc.
+
+The way forward would be to set up an Observe relationship so that when 
+this value changes, a Server then controls the client. So the server 
+then requests the client to make an Update based on the server's policy. 
+Also, based on change on the resource value, the server can use the 
+Create or Delete operations using the Device Management and Service 
+Enablement Interface:
+
+Section 5.4.6 Create:
+
+"The "Create" operation is used by the LWM2M Server to create an Object 
+Instance within the LWM2M Client. The "Create" operation MUST target 
+either an Object Instance which has not yet been instantiated or the 
+Object.
+
+The Object Instance that is created in the LWM2M Client by the LWM2M 
+Server MUST be an Object type supported by the LWM2M Client and 
+announced to the LWM2M Server using the "Register" and "Update" 
+operations of the LWM2M Client Registration Interface.
+
+The new value included in the payload MUST follow the TLV or JSON format 
+according to the Content-Format option which MUST be specified, and 
+according to the "Create" authorization  rules described  in sub-section 
+7.3.2.3 (Operation on Object Instance) "
+
+5.4.7	Delete
+
+"The "Delete" operation is used for LWM2M Server to delete an Object 
+Instance within the LWM2M Client.
+The Object Instance that is deleted in the LWM2M Client by the LWM2M 
+Server MUST be an Object Instance that is announced by the LWM2M Client 
+to the LWM2M Server using the "Register" and "Update" operations of the 
+Client Registration Interface."
+
+
+
+s it possible to provide a link to an object on another client?
+
+ 
+
+As I understand, weblinks are used to create composite objects. So a thermostat object, has say 3 resources and each of these is a link. One link for temperature sensor object, one for the object to set required temperature, one for power object  etc.
+
+ 
+
+But is it possible to give a link to an object on another LWM2M client on say another physical device.
+
+ 
+
+Practically, maybe a gateway acts as a LWM2M client and has links to LWM2M clients running on the devices connected to it.
+
+My first impression is that I believe nothing prevents us from doing
+that. Afterall, the whole idea of web links is to connect objects and
+resources to each other without duplicating everything, or having static
+compositions. Also I think the granularity is not restricted. So one
+could/should theoretically be able to link to an object, object
+instance, resource list, resource instance in that list, etc.
+
+On more careful thinking I realized if we are doing web linking across multiple clients that basically means we are using one app to access resources from multiple servers in one request.
+
+It would be a good idea to check same-origin policies then. For example cross origin requests in HTTP require the servers to explicitly allow it by sending HTTP response headers to the client or browser saying so. That's pretty much the basis of cross site access control in  CORS.
+
+So for TLS or DTLS encryption I suppose you need to set up independent sessions to the different origin servers.. This might be worth checking.
+
+
+--> LWM2M server in the cloud vs LWM2M server in the gateway
+
+--> Managing other architectures and data models
+
+--> security
